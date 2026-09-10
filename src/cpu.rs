@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::instructions::*;
+
 pub struct CPU {
     pub register_a: u8,
     pub register_x: u8,
@@ -9,6 +13,48 @@ pub struct CPU {
 }
 
 impl CPU {
+    pub fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
+            //add the value of the x register
+            AddressingMode::ZeroPageX => {
+                let address = self.mem_read(self.program_counter);
+                address.wrapping_add(self.register_x) as u16
+            }
+            AddressingMode::ZeroPageY => {
+                let address = self.mem_read(self.program_counter);
+                address.wrapping_add(self.register_y) as u16
+            }
+            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+            AddressingMode::AbsoluteX => {
+                let address = self.mem_read_u16(self.program_counter);
+                address.wrapping_add(self.register_x as u16)
+            }
+            AddressingMode::AbsoluteY => {
+                let address = self.mem_read_u16(self.program_counter);
+                address.wrapping_add(self.register_y as u16)
+            }
+            AddressingMode::IndirectX => {
+                let base = self.mem_read(self.program_counter);
+
+                let address = base.wrapping_add(self.register_x);
+                let lo = self.mem_read(address as u16);
+                let hi = self.mem_read(address.wrapping_add(1) as u16);
+
+                let deref_adr = ((hi as u16) << 8) | (lo as u16);
+                deref_adr.wrapping_add(self.register_y as u16)
+            }
+            AddressingMode::IndirectY => {
+                let base = self.mem_read(self.program_counter);
+
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read((base as u16).wrapping_add(1));
+                ((hi as u16) << 8) | (lo as u16)
+            }
+            AddressingMode::Immediate => self.program_counter,
+            AddressingMode::NoneAddressing => panic!("Cannot fetch data for non adressing"),
+        }
+    }
     pub fn new() -> Self {
         CPU {
             register_a: 0,
@@ -54,25 +100,39 @@ impl CPU {
         self.mem_write_u16(0xFFFC, 0x8000);
     }
     pub fn run(&mut self) {
+        let ref opcodes: HashMap<u8, &'static OpCode> = *OPCODES_MAP;
         loop {
-            let opcode = self.memory[self.program_counter as usize];
+            let code = self.memory[self.program_counter as usize];
             self.program_counter += 1;
 
-            match opcode {
-                0xA9 => {
-                    let immediate = self.memory[self.program_counter as usize];
-                    self.program_counter += 1;
-                    self.lda(immediate);
+            let opcode = opcodes
+                .get(&code)
+                .expect(&format!("invalid instruction: {:x}", code));
+
+            match code {
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
+                    self.lda(&opcode.adressing_mode);
+                }
+
+                0xA2 | 0xA6 | 0xb6 | 0xae | 0xbe => {
+                    self.ldx(&opcode.adressing_mode);
                 }
                 0xAA => self.tax(),
                 0xE8 => self.inx(),
                 0x00 => return,
                 _ => todo!(),
             }
+            self.program_counter += (opcode.bytes - 1) as u16
         }
     }
-    fn lda(&mut self, value: u8) {
-        self.register_a = value;
+    fn lda(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        self.register_a = self.memory[address as usize];
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let adress = self.get_operand_address(mode);
+        self.register_x = self.memory[adress as usize];
         self.update_zero_and_negative_flags(self.register_a);
     }
     fn tax(&mut self) {
