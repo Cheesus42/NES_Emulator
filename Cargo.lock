@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "new_emulator"
+name = "nes_emulator"
 version = "0.1.0"

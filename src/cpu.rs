@@ -20,13 +20,20 @@ impl CPU {
             memory: [0; 0xFFFF],
         }
     }
+    pub fn reset(&mut self) {
+        self.register_a = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.status = 0;
+        self.program_counter = self.mem_read_u16(0xFFFC);
+    }
     pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
     }
     pub fn mem_read_u16(&self, pos: u16) -> u16 {
         let low_b = self.mem_read(pos) as u16;
         let high_b = self.mem_read(pos + 1) as u16;
-        (high_b << 8) | (low_b as u16)
+        (high_b << 8) | low_b
     }
     pub fn mem_write(&mut self, addr: u16, val: u8) {
         self.memory[addr as usize] = val;
@@ -39,11 +46,12 @@ impl CPU {
     }
     pub fn load_and_run(&mut self, program: Vec<u8>) {
         self.load(program);
+        self.reset();
         self.run();
     }
     pub fn load(&mut self, program: Vec<u8>) {
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.program_counter = 0x8000;
+        self.mem_write_u16(0xFFFC, 0x8000);
     }
     pub fn run(&mut self) {
         loop {
