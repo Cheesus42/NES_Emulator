@@ -115,7 +115,19 @@ impl CPU {
                     self.adc(&opcode.adressing_mode)
                 }
                 //and
-                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => todo!(),
+                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => {
+                    self.and(&opcode.adressing_mode)
+                }
+                //asl
+                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => {
+                    self.asl(&opcode.adressing_mode);
+                }
+                //bcc
+                0x90 => self.bcc(),
+                //bcs
+                0xB0 => self.bcs(),
+                //beq
+                0xF0 => self.beq(),
                 //lda
                 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&opcode.adressing_mode)
@@ -124,6 +136,7 @@ impl CPU {
                 0xA2 | 0xA6 | 0xb6 | 0xae | 0xbe => self.ldx(&opcode.adressing_mode),
                 //ldy
                 0xa0 | 0xa4 | 0xb4 | 0xac | 0xbc => self.ldy(&opcode.adressing_mode),
+                0x38 => self.sec(),
                 0xAA => self.tax(),
                 0xE8 => self.inx(),
                 0x00 => return,
@@ -137,12 +150,20 @@ impl CPU {
         let adds = self.memory[address as usize];
         let carry_in = if self.status & 0b0000_0001 != 0 { 1 } else { 0 };
 
+        let original_a = self.register_a;
+
         let (sum1, carry1) = self.register_a.overflowing_add(adds);
         let (sum2, carry2) = sum1.overflowing_add(carry_in);
         let carry_out = carry1 || carry2;
+        let overflow = (original_a ^ sum2) & (adds ^ sum2) & 0x80 != 0;
 
         self.register_a = sum2;
         self.update_zero_and_negative_flags(self.register_a);
+        if overflow {
+            self.status |= 0b0100_0000;
+        } else {
+            self.status &= 0b1011_1111;
+        }
         if carry_out {
             self.status |= 0b0000_0001;
         } else {
@@ -154,20 +175,73 @@ impl CPU {
         self.register_a &= self.memory[address as usize];
         self.update_zero_and_negative_flags(self.register_a);
     }
+    fn asl(&mut self, mode: &AddressingMode) {
+        let value = match mode {
+            AddressingMode::NoneAddressing => self.register_a,
+            _ => {
+                let address = self.get_operand_address(mode);
+                self.mem_read(address)
+            }
+        };
+
+        let carry = value & 0b1000_0000;
+        let result = value << 1;
+
+        match mode {
+            AddressingMode::NoneAddressing => self.register_a = result,
+            _ => {
+                let address = self.get_operand_address(mode);
+                self.mem_write(address, result);
+            }
+        }
+        if carry != 0 {
+            self.status |= 0b0000_0001;
+        } else {
+            self.status &= 0b1111_1110;
+        }
+        self.update_zero_and_negative_flags(result);
+    }
+    fn bcc(&mut self) {
+        if self.mem_read(self.program_counter) == 0 {
+            return;
+        }
+        if self.status & 0b0000_0001 == 0 {
+            self.program_counter += (self.mem_read(self.program_counter) - 1) as u16;
+        }
+    }
+    fn bcs(&mut self) {
+        if self.mem_read(self.program_counter) == 0 {
+            return;
+        }
+        if self.status & 0b0000_0001 != 0 {
+            self.program_counter += (self.mem_read(self.program_counter) - 1) as u16;
+        }
+    }
+    fn beq(&mut self) {
+        if self.mem_read(self.program_counter) == 0 {
+            return;
+        }
+        if self.status & 0b0000_0010 != 0 {
+            self.program_counter += (self.mem_read(self.program_counter) - 1) as u16;
+        }
+    }
     fn lda(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
-        self.register_a = self.memory[address as usize];
+        self.register_a = self.mem_read(address);
         self.update_zero_and_negative_flags(self.register_a);
     }
     fn ldx(&mut self, mode: &AddressingMode) {
-        let adress = self.get_operand_address(mode);
-        self.register_x = self.memory[adress as usize];
+        let address = self.get_operand_address(mode);
+        self.register_x = self.mem_read(address);
         self.update_zero_and_negative_flags(self.register_x);
     }
     fn ldy(&mut self, mode: &AddressingMode) {
-        let adress = self.get_operand_address(mode);
-        self.register_y = self.memory[adress as usize];
+        let address = self.get_operand_address(mode);
+        self.register_y = self.mem_read(address);
         self.update_zero_and_negative_flags(self.register_y);
+    }
+    fn sec(&mut self) {
+        self.status |= 0b0000_0001;
     }
     fn tax(&mut self) {
         self.register_x = self.register_a;
