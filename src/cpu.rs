@@ -114,6 +114,8 @@ impl CPU {
                 0x69 | 0x65 | 0x75 | 0x6d | 0x7d | 0x79 | 0x61 | 0x71 => {
                     self.adc(&opcode.adressing_mode)
                 }
+                //and
+                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => todo!(),
                 //lda
                 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&opcode.adressing_mode)
@@ -146,6 +148,11 @@ impl CPU {
         } else {
             self.status &= 0b1111_1110;
         }
+    }
+    fn and(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        self.register_a &= self.memory[address as usize];
+        self.update_zero_and_negative_flags(self.register_a);
     }
     fn lda(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
